@@ -65,7 +65,7 @@ function sparkline(rows) {
 function overview() {
   const rows = storeRows(), c = calibration(), test = backtest(rows);
   const avg = c.revenue / c.months;
-  const breakeven = requiredRevenue({ ...c, targetProfit: 0, targetKind: 'operating', otherNet: 0 });
+  const breakeven = requiredRevenue({ ...c, targetProfit: 0, targetKind: 'operating', otherNet: 0, investorMode: 'unset' });
   const anomalies = rows.flatMap(row => (row.lines || []).filter(line => line.label === 'BIAYA' && line.amount < 0).map(line => `${month(row.period)}: akun “BIAYA” ${idr(line.amount)} mengurangi pendapatan dalam laporan sumber.`));
   return `<div class="page-heading"><div><span class="eyebrow">Kinerja historis</span><h1>Dasar target ${storeLabel()}</h1><p>${c.months} bulan laporan laba rugi · ${month(c.periodStart)}–${month(c.periodEnd)}</p></div><button class="button primary" data-action="page" data-page="planner">Buat target <span aria-hidden="true">↗</span></button></div>
     <div class="stats-grid">

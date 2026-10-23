@@ -40,6 +40,13 @@ test('solves a target profit through the same contribution model used by forecas
   assert.equal(projection.ownerProfit, null);
 });
 
+test('calibrated break-even target uses operating profit before investor', () => {
+  const rows = [1, 2, 3].map(month => report(`2026-0${month}-01`, 100_000_000, 60_000_000, 30_000_000));
+  const c = calibrate(rows);
+  const revenue = requiredRevenue({ ...c, targetProfit: 0, targetKind: 'operating', otherNet: 0, investorMode: 'unset' });
+  assert(forecast({ ...c, revenue, otherNet: 0, investorMode: 'unset' }).operatingProfit >= 0);
+});
+
 test('owner target explicitly accounts for investor percentage', () => {
   const input = { targetProfit: 8_000_000, targetKind: 'owner', hppRate: .6, variableRate: 0, fixedCost: 20_000_000, otherNet: 0, investorMode: 'percentage', investorValue: 20 };
   const revenue = requiredRevenue(input);
