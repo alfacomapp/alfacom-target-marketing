@@ -127,7 +127,7 @@ function shell() {
 
 function authScreen() {
   if (!client && !demo) return `<div class="auth-wrap"><div class="auth-card"><span class="brand-mark">A</span><h1>Konfigurasi belum selesai</h1><p>Atur URL dan publishable/anon key Supabase pada build frontend agar aplikasi dapat terhubung ke proyek baru.</p><code>VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY</code></div></div>`;
-  return `<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><span class="brand-mark">A</span><div><strong>ALFACOM</strong><small>Target Marketing</small></div></div><span class="eyebrow">Akses privat</span><h1>Rencanakan laba<br>dengan dasar yang jelas.</h1><p>Masuk untuk melihat laporan 9 bulan Kendari dan Raha serta menyusun target omzet.</p><form id="login-form"><label class="field"><span>Email</span><input type="email" name="email" required autocomplete="username" placeholder="email@perusahaan.com"></label><label class="field"><span>Kata sandi</span><input type="password" name="password" required autocomplete="current-password" placeholder="••••••••"></label><button class="button primary full" type="submit">Masuk ke dashboard →</button></form><small class="fine">Akun dibuat oleh admin proyek Supabase. Data laporan tidak dibuka untuk pengunjung umum.</small></div><div class="auth-side"><span>ALFACOM / 2026</span><div><p>“Target yang baik dapat ditelusuri kembali ke angka laporan.”</p><small>Perencanaan dua toko · Kendari & Raha</small></div></div></div>`;
+  return `<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><span class="brand-mark">A</span><div><strong>ALFACOM</strong><small>Target Marketing</small></div></div><span class="eyebrow">Akses privat</span><h1>Rencanakan laba<br>dengan dasar yang jelas.</h1><p>Masuk untuk melihat laporan Kendari dan Raha serta menyusun target omzet.</p><form id="login-form"><label class="field"><span>Email</span><input type="email" name="email" required autocomplete="username" placeholder="email@perusahaan.com"></label><label class="field"><span>Kata sandi</span><input type="password" name="password" autocomplete="current-password" placeholder="••••••••"></label><button class="button primary full" type="submit">Masuk dengan kata sandi →</button></form><button class="link-button magic-link" data-action="magic-link">Kirim tautan masuk ke email</button><small class="fine">Akun dibuat oleh admin proyek Supabase. Data laporan tidak dibuka untuk pengunjung umum.</small></div><div class="auth-side"><span>ALFACOM / 2026</span><div><p>“Target yang baik dapat ditelusuri kembali ke angka laporan.”</p><small>Perencanaan dua toko · Kendari & Raha</small></div></div></div>`;
 }
 
 function emptyDataScreen() {
@@ -157,6 +157,15 @@ document.addEventListener('click', async event => {
   try {
     if (action === 'page') { state.page = button.dataset.page; render(); window.scrollTo(0, 0); }
     if (action === 'logout') { if (!demo) await client.auth.signOut(); state.member = null; state.reports = []; render(); }
+    if (action === 'magic-link') {
+      if (!client) throw new Error('Supabase belum terhubung');
+      const email = document.querySelector('#login-form [name="email"]')?.value.trim();
+      if (!email || !document.querySelector('#login-form [name="email"]').checkValidity()) throw new Error('Isi alamat email yang valid');
+      const redirectTo = `${location.origin}${import.meta.env.BASE_URL}`;
+      const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo, shouldCreateUser: false } });
+      if (error) throw error;
+      notify('Tautan masuk dikirim. Periksa email Anda.');
+    }
     if (action === 'reset') { state.drafts[state.store] = defaultDraft(); render(); }
     if (action === 'report-detail') { state.selectedReport = button.dataset.period; render(); }
     if (action === 'toggle-report-form') { const slot = document.getElementById('report-form-slot'); if (slot) slot.innerHTML = slot.innerHTML ? '' : reportForm(); }

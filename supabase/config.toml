@@ -1,3 +1,7 @@
+[auth]
+site_url = "https://alfacomapp.github.io/alfacom-target-marketing/"
+additional_redirect_urls = ["http://127.0.0.1:5173/"]
+
 [functions.marketing-api]
 # JWT is verified explicitly with auth.getUser(token) so publishable keys work.
 verify_jwt = false
