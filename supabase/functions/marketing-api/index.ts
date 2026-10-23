@@ -22,6 +22,21 @@ const money = (value: unknown, label: string) => {
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   try {
+    const action = new URL(request.url).searchParams.get('action') || 'bootstrap';
+    if (request.method === 'GET' && action === 'public') {
+      const { data: reports, error } = await db.from('marketing_reports').select('*').order('period', { ascending: true });
+      if (error) throw error;
+      return json({ reports: (reports || []).map(row => ({
+        store_code: row.store_code, period: row.period,
+        revenue: row.revenue, hpp: row.hpp, gross_profit: row.gross_profit,
+        operating_expenses_reported: row.operating_expenses_reported,
+        investor_paid: row.investor_paid, other_income: row.other_income,
+        other_expense: row.other_expense, net_reported: row.net_reported,
+        commission: row.commission, delivery: row.delivery,
+        other_operating_cost: row.other_operating_cost,
+        has_revenue_adjustment: Array.isArray(row.lines) && row.lines.some((line: { label?: string; amount?: number }) => line.label === 'BIAYA' && Number(line.amount) < 0),
+      })) });
+    }
     const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
     if (!token) return bad('Sesi diperlukan', 401);
     const { data: auth, error: authError } = await db.auth.getUser(token);
@@ -30,7 +45,6 @@ Deno.serve(async (request: Request) => {
     if (memberError) throw memberError;
     if (!member) return bad('Akun belum diberi akses aplikasi target marketing', 403);
 
-    const action = new URL(request.url).searchParams.get('action') || 'bootstrap';
     if (request.method === 'GET' && action === 'bootstrap') {
       const { data: reports, error: reportError } = await db.from('marketing_reports').select('*').in('store_code', member.allowed_stores).order('period', { ascending: true });
       if (reportError) throw reportError;

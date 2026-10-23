@@ -1,12 +1,12 @@
 # Alfacom Target Marketing
 
-Aplikasi target omzet dan laba untuk toko Kendari dan Raha. Frontend statis disajikan melalui GitHub Pages. Login memakai Supabase Auth; data laporan serta skenario berada di Supabase Postgres dan hanya dapat diakses melalui Edge Function `marketing-api`.
+Aplikasi target omzet dan laba untuk toko Kendari dan Raha. Frontend statis disajikan melalui GitHub Pages dan langsung membuka dashboard tanpa login. Pilihan toko tersedia pada dropdown. Laporan sumber berada di Supabase Postgres; Edge Function `marketing-api` hanya mengirim ringkasan bulanan yang diperlukan untuk perhitungan ke pengunjung umum. Skenario yang disimpan pengguna berada di penyimpanan browser masing-masing.
 
 - Aplikasi: https://alfacomapp.github.io/alfacom-target-marketing/
 - Repository: https://github.com/alfacomapp/alfacom-target-marketing
 - Proyek Supabase: https://supabase.com/dashboard/project/wevrtmqmgnfdwnmkgydg
 
-Proyek Supabase tersebut sudah berisi 18 laporan historis dan fungsi API yang terpasang. Pengguna pertama tetap perlu dibuat di Supabase Auth dan diberi peran pada `marketing_members` sebelum dapat masuk. Undangan pengguna harus dikirim ke alamat email yang dipilih pemilik aplikasi.
+Proyek Supabase tersebut sudah berisi 18 laporan historis. Ringkasan bulanan pada situs publik dapat dibaca siapa saja yang membuka URL aplikasi. Rincian akun, nama file sumber, dan file `.xls` tidak dikirim oleh API publik.
 
 ## Model perhitungan
 
@@ -50,24 +50,17 @@ Pratinjau lokal memakai 18 file `.xls` di folder proyek. Data pratinjau dilayani
 ## Pemasangan Supabase baru
 
 1. Buat proyek Supabase baru. Jalankan migrasi `supabase/migrations/20261023000000_marketing_planner.sql` melalui CLI atau SQL Editor.
-2. Deploy `supabase/functions/marketing-api`. Fungsi memverifikasi JWT pengguna melalui Supabase Auth dan memeriksa `marketing_members`. Simpan service role key hanya sebagai environment server Supabase; jangan masukkan ke frontend atau GitHub.
-3. Buat pengguna di Supabase Auth, lalu beri akses dengan SQL berikut (ganti UID sesuai pengguna):
+2. Deploy `supabase/functions/marketing-api` dengan `verify_jwt = false` sesuai `supabase/config.toml`. Endpoint `GET ?action=public` hanya mengirim ringkasan bulanan. Endpoint penulisan tetap memverifikasi JWT dan keanggotaan admin. Simpan service role key hanya sebagai environment server Supabase; jangan masukkan ke frontend atau GitHub.
+3. Di mesin yang memiliki 18 laporan sumber, jalankan `python scripts/normalize_reports.py`. Set `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` hanya pada shell lokal, lalu jalankan `node scripts/import-reports.mjs`. Script memverifikasi seluruh 18 laporan sebelum mengimpor dan memastikan 18 baris diterima. Jangan mengunggah laporan sumber atau kunci ke repository.
+4. Buat repository variables `SUPABASE_URL` dan `SUPABASE_ANON_KEY` di GitHub. Nilai kedua adalah publishable/anon key, bukan service role key. Pilih **GitHub Actions** sebagai sumber GitHub Pages. Workflow akan menguji, membangun, dan menerbitkan frontend.
 
-   ```sql
-   insert into public.marketing_members (user_id, role, allowed_stores)
-   values ('USER-UUID', 'admin', array['kendari','raha']);
-   ```
-
-4. Di mesin yang memiliki 18 laporan sumber, jalankan `python scripts/normalize_reports.py`. Set `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` hanya pada shell lokal, lalu jalankan `node scripts/import-reports.mjs`. Script memverifikasi seluruh 18 laporan sebelum mengimpor dan memastikan 18 baris diterima. Jangan mengunggah laporan sumber atau kunci ke repository.
-5. Buat repository variables `SUPABASE_URL` dan `SUPABASE_ANON_KEY` di GitHub. Nilai kedua adalah publishable/anon key, bukan service role key. Pilih **GitHub Actions** sebagai sumber GitHub Pages. Workflow akan menguji, membangun, dan menerbitkan frontend.
-
-File `.env.example` dapat disalin ke `.env.local` untuk menguji frontend terhadap Supabase secara lokal. Akun yang bisa login tetap harus ada dalam `marketing_members`.
+File `.env.example` dapat disalin ke `.env.local` untuk menguji frontend terhadap Supabase secara lokal. Pembaruan laporan selanjutnya dilakukan melalui proses impor backend. Situs publik tidak menyediakan formulir perubahan laporan.
 
 Untuk memeriksa layanan yang sudah terpasang, set tiga variabel `SUPABASE_URL`, `SUPABASE_ANON_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY` pada shell lokal, lalu jalankan `node scripts/smoke-backend.mjs`. Pemeriksaan ini membuat pengguna dan laporan sementara, menguji alur akses, lalu menghapus keduanya. Jangan menyimpan service role key di file proyek.
 
 ## Audit sumber
 
-`scripts/normalize_reports.py` menggunakan label dan posisi subtotal di setiap laporan, bukan nomor baris tetap. Script menghentikan proses bila `pendapatan − HPP akhir` atau `laba rugi` berbeda lebih dari Rp2 dari angka laporan. Dua laporan dengan laba rugi persis nol memiliki baris hasil kosong pada ekspor; script menyimpan `net_reported = NULL` sambil menghitung hasil nol dari komponen. Pada Kendari Agustus, terdapat akun `BIAYA` negatif di bagian pendapatan; angka itu tetap dihormati sebagai pengurang pendapatan sesuai laporan dan ditandai pada layar audit.
+`scripts/normalize_reports.py` menggunakan label dan posisi subtotal di setiap laporan, bukan nomor baris tetap. Script menghentikan proses bila `pendapatan − HPP akhir` atau `laba rugi` berbeda lebih dari Rp2 dari angka laporan. Dua laporan dengan laba rugi persis nol memiliki baris hasil kosong pada ekspor; script menyimpan `net_reported = NULL` sambil menghitung hasil nol dari komponen. Pada Kendari Agustus, terdapat akun `BIAYA` negatif di bagian pendapatan; angka itu tetap dihormati sebagai pengurang pendapatan sesuai laporan dan ditandai pada ringkasan tanpa mempublikasikan rincian akunnya.
 
 ## Keterbatasan
 

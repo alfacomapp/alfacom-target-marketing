@@ -3,5 +3,5 @@ site_url = "https://alfacomapp.github.io/alfacom-target-marketing/"
 additional_redirect_urls = ["http://127.0.0.1:5173/"]
 
 [functions.marketing-api]
-# JWT is verified explicitly with auth.getUser(token) so publishable keys work.
+# Public monthly summaries need no JWT; write endpoints verify JWT and membership explicitly.
 verify_jwt = false

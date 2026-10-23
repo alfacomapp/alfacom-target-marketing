@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import { allocateMarketing, backtest, calibrate, forecast, requiredRevenue, validateReport } from '../supabase/functions/_shared/model.js';
 import './style.css';
 
@@ -6,15 +5,25 @@ const app = document.getElementById('app');
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const publicKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const demo = import.meta.env.DEV && (!supabaseUrl || !publicKey);
-const client = !demo && supabaseUrl && publicKey ? createClient(supabaseUrl, publicKey) : null;
+const scenarioStorageKey = 'alfacom-target-marketing-scenarios-v1';
 const idr = value => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Math.round(value || 0));
 const compact = value => new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(value || 0);
 const pct = value => `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(value * 100)}%`;
 const month = period => new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period.slice(0, 10)}T00:00:00Z`));
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const round = value => Math.round(Number(value) || 0);
 const numberInput = (label, key, value, { step = '1', hint = '', min = '0' } = {}) => `<label class="field"><span>${label}</span><input name="${key}" type="number" inputmode="decimal" min="${min}" step="${step}" value="${esc(value)}" required>${hint ? `<small>${hint}</small>` : ''}</label>`;
-const state = { store: 'kendari', page: 'overview', reports: [], scenarios: [], member: null, user: null, drafts: {}, selectedReport: null, alert: '', busy: false };
+const state = { store: 'kendari', page: 'overview', reports: [], scenarios: [], drafts: {}, selectedReport: null, alert: '', busy: false, ready: false };
+
+function loadScenarios() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(scenarioStorageKey) || '[]');
+    return Array.isArray(rows) ? rows.filter(row => row && ['kendari', 'raha'].includes(row.store_code) &&
+      typeof row.id === 'string' && /^[\w-]{1,80}$/.test(row.id) &&
+      typeof row.created_at === 'string' && /^\d{4}-\d{2}-\d{2}/.test(row.created_at) &&
+      row.inputs && typeof row.inputs === 'object' && typeof row.name === 'string') : [];
+  } catch { return []; }
+}
+function saveScenarios() { localStorage.setItem(scenarioStorageKey, JSON.stringify(state.scenarios)); }
 
 function storeRows() { return state.reports.filter(row => row.store_code === state.store).sort((a, b) => a.period.localeCompare(b.period)); }
 function calibration() { return calibrate(storeRows()); }
@@ -26,14 +35,10 @@ function draft() { return state.drafts[state.store] ??= defaultDraft(); }
 function storeLabel() { return state.store === 'kendari' ? 'Kendari' : 'Raha'; }
 function notify(message) { state.alert = message; render(); setTimeout(() => { if (state.alert === message) { state.alert = ''; document.querySelector('.toast')?.remove(); } }, 6000); }
 
-async function api(action, { method = 'GET', body, id } = {}) {
-  const { data: { session } } = await client.auth.getSession();
-  if (!session) throw new Error('Sesi berakhir. Silakan masuk lagi.');
+async function api(action) {
   const params = new URLSearchParams({ action });
-  if (id) params.set('id', id);
   const response = await fetch(`${supabaseUrl}/functions/v1/marketing-api?${params}`, {
-    method, headers: { Authorization: `Bearer ${session.access_token}`, apikey: publicKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    headers: { apikey: publicKey },
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `Permintaan gagal (${response.status})`);
@@ -43,13 +48,13 @@ async function api(action, { method = 'GET', body, id } = {}) {
 async function bootstrap() {
   state.busy = true; render();
   try {
-    const result = demo ? await fetch('/__demo').then(async r => { if (!r.ok) throw new Error('Jalankan npm run prepare:demo lebih dulu'); return r.json(); }) : await api('bootstrap');
+    const result = demo ? await fetch('/__demo').then(async r => { if (!r.ok) throw new Error('Jalankan npm run prepare:demo lebih dulu'); return r.json(); }) : await api('public');
     state.reports = result.reports || [];
-    state.scenarios = result.scenarios || [];
-    state.member = result.member;
-    if (!state.member.allowed_stores.includes(state.store)) state.store = state.member.allowed_stores[0];
+    state.scenarios = loadScenarios();
     state.drafts = {};
+    state.alert = '';
   } catch (error) { state.alert = error.message; }
+  state.ready = true;
   state.busy = false; render();
 }
 
@@ -66,7 +71,7 @@ function overview() {
   const rows = storeRows(), c = calibration(), test = backtest(rows);
   const avg = c.revenue / c.months;
   const breakeven = requiredRevenue({ ...c, targetProfit: 0, targetKind: 'operating', otherNet: 0, investorMode: 'unset' });
-  const anomalies = rows.flatMap(row => (row.lines || []).filter(line => line.label === 'BIAYA' && line.amount < 0).map(line => `${month(row.period)}: akun “BIAYA” ${idr(line.amount)} mengurangi pendapatan dalam laporan sumber.`));
+  const anomalies = rows.filter(row => row.has_revenue_adjustment).map(row => `${month(row.period)}: laporan memuat penyesuaian pendapatan negatif yang perlu diperhatikan saat membaca tren.`);
   return `<div class="page-heading"><div><span class="eyebrow">Kinerja historis</span><h1>Dasar target ${storeLabel()}</h1><p>${c.months} bulan laporan laba rugi · ${month(c.periodStart)}–${month(c.periodEnd)}</p></div><button class="button primary" data-action="page" data-page="planner">Buat target <span aria-hidden="true">↗</span></button></div>
     <div class="stats-grid">
       <article class="metric highlight"><span>Total pendapatan</span><strong>${idr(c.revenue)}</strong><small>Rata-rata ${idr(avg)} per bulan</small></article>
@@ -108,34 +113,31 @@ function planner() {
 function reports() {
   const rows = storeRows();
   const selected = rows.find(row => row.period === state.selectedReport) || rows.at(-1);
-  return `<div class="page-heading"><div><span class="eyebrow">Sumber perhitungan</span><h1>Laporan laba rugi</h1><p>Angka sumber dan rekonsiliasi untuk ${storeLabel()}.</p></div>${state.member?.role === 'admin' ? '<button class="button primary" data-action="toggle-report-form">Tambah laporan bulanan</button>' : ''}</div>
-    <section id="report-form-slot"></section><section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Periode</th><th>Pendapatan</th><th>HPP</th><th>Laba kotor</th><th>Laba sebelum investor</th><th>Investor dibayar</th><th>Laba rugi laporan</th></tr></thead><tbody>${rows.map(row => { const v = validateReport(row); return `<tr class="${selected?.period === row.period ? 'selected' : ''}" data-action="report-detail" data-period="${row.period}"><td><b>${month(row.period)}</b><small>${esc(row.source_file)}</small></td><td>${idr(row.revenue)}</td><td>${idr(row.hpp)}</td><td>${idr(row.gross_profit)}</td><td>${idr(v.profitBeforeInvestor)}</td><td>${row.investor_paid == null ? '<span class="status pending">Belum tercatat</span>' : idr(row.investor_paid)}</td><td class="${v.net < 0 ? 'negative' : ''}">${idr(v.net)}</td></tr>`; }).join('')}</tbody></table></div></section>
-    ${selected ? `<section class="panel detail"><div class="panel-head"><div><span class="eyebrow">Rincian sumber</span><h2>${month(selected.period)} · ${storeLabel()}</h2><p>${esc(selected.source_file)}</p></div><span class="pill">Selisih rekonsiliasi: ${idr((selected.revenue - selected.hpp) - selected.gross_profit)}</span></div><div class="detail-grid"><div><span>Pendapatan − HPP</span><b>${idr(selected.gross_profit)}</b></div><div><span>Biaya laporan, termasuk investor</span><b>${idr(selected.operating_expenses_reported)}</b></div><div><span>Pendapatan lain − biaya lain</span><b>${idr(selected.other_income - selected.other_expense)}</b></div><div><span>Pembayaran investor</span><b>${selected.investor_paid == null ? 'Belum tercatat' : idr(selected.investor_paid)}</b></div></div>${selected.net_reported == null ? '<p class="fine">Baris laba rugi kosong pada sumber; hasil hitung rekonsiliasi adalah Rp0.</p>' : ''}<details><summary>Lihat akun pada laporan sumber</summary><div class="line-list">${(selected.lines || []).map(line => `<div><span><i>Baris ${line.row}</i> ${esc(line.label)}</span><b>${idr(line.amount)}</b></div>`).join('') || '<p>Rincian akun tidak tersedia untuk input manual.</p>'}</div></details></section>` : ''}`;
+  return `<div class="page-heading"><div><span class="eyebrow">Sumber perhitungan</span><h1>Ringkasan laba rugi</h1><p>Angka bulanan dan rekonsiliasi untuk ${storeLabel()}.</p></div></div>
+    <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Periode</th><th>Pendapatan</th><th>HPP</th><th>Laba kotor</th><th>Laba sebelum investor</th><th>Investor dibayar</th><th>Laba rugi laporan</th></tr></thead><tbody>${rows.map(row => { const v = validateReport(row); return `<tr class="${selected?.period === row.period ? 'selected' : ''}" data-action="report-detail" data-period="${row.period}"><td><b>${month(row.period)}</b></td><td>${idr(row.revenue)}</td><td>${idr(row.hpp)}</td><td>${idr(row.gross_profit)}</td><td>${idr(v.profitBeforeInvestor)}</td><td>${row.investor_paid == null ? '<span class="status pending">Belum tercatat</span>' : idr(row.investor_paid)}</td><td class="${v.net < 0 ? 'negative' : ''}">${idr(v.net)}</td></tr>`; }).join('')}</tbody></table></div></section>
+    ${selected ? `<section class="panel detail"><div class="panel-head"><div><span class="eyebrow">Ringkasan bulanan</span><h2>${month(selected.period)} · ${storeLabel()}</h2></div><span class="pill">Selisih rekonsiliasi: ${idr((selected.revenue - selected.hpp) - selected.gross_profit)}</span></div><div class="detail-grid"><div><span>Pendapatan − HPP</span><b>${idr(selected.gross_profit)}</b></div><div><span>Biaya laporan, termasuk investor</span><b>${idr(selected.operating_expenses_reported)}</b></div><div><span>Pendapatan lain − biaya lain</span><b>${idr(selected.other_income - selected.other_expense)}</b></div><div><span>Pembayaran investor</span><b>${selected.investor_paid == null ? 'Belum tercatat' : idr(selected.investor_paid)}</b></div></div>${selected.net_reported == null ? '<p class="fine">Baris laba rugi kosong pada sumber; hasil hitung rekonsiliasi adalah Rp0.</p>' : ''}${selected.has_revenue_adjustment ? '<p class="warning">Laporan bulan ini memuat penyesuaian pendapatan negatif.</p>' : ''}</section>` : ''}`;
 }
 
 function scenarios() {
   const rows = state.scenarios.filter(row => row.store_code === state.store);
-  return `<div class="page-heading"><div><span class="eyebrow">Perencanaan tersimpan</span><h1>Skenario ${storeLabel()}</h1><p>Bandingkan dan buka kembali asumsi yang pernah disimpan.</p></div><button class="button primary" data-action="page" data-page="planner">Buat skenario</button></div><section class="scenario-grid">${rows.length ? rows.map(row => { let target; try { target = requiredRevenue(row.inputs); } catch { target = null; } return `<article class="panel scenario-card"><span class="eyebrow">${month(row.created_at.slice(0, 10))}</span><h2>${esc(row.name)}</h2><p>Target laba ${idr(row.inputs.targetProfit)}</p><strong>${target == null ? 'Perlu diperbarui' : idr(target)}</strong><small>Omzet bulanan · ${row.inputs.targetKind === 'owner' ? 'sesudah investor' : 'sebelum investor'}</small><div class="scenario-actions"><button class="button outline" data-action="load-scenario" data-id="${row.id}">Buka</button><button class="link-button danger" data-action="delete-scenario" data-id="${row.id}">Hapus</button></div></article>`; }).join('') : '<div class="panel empty"><span>◇</span><h2>Belum ada skenario</h2><p>Simpan perhitungan dari Kalkulator Target untuk membandingkannya nanti.</p></div>'}</section>`;
+  return `<div class="page-heading"><div><span class="eyebrow">Perencanaan tersimpan</span><h1>Skenario ${storeLabel()}</h1><p>Tersimpan hanya pada browser ini. Bandingkan dan buka kembali asumsi Anda.</p></div><button class="button primary" data-action="page" data-page="planner">Buat skenario</button></div><section class="scenario-grid">${rows.length ? rows.map(row => { let target; try { target = requiredRevenue(row.inputs); } catch { target = null; } return `<article class="panel scenario-card"><span class="eyebrow">${month(row.created_at.slice(0, 10))}</span><h2>${esc(row.name)}</h2><p>Target laba ${idr(row.inputs.targetProfit)}</p><strong>${target == null ? 'Perlu diperbarui' : idr(target)}</strong><small>Omzet bulanan · ${row.inputs.targetKind === 'owner' ? 'sesudah investor' : 'sebelum investor'}</small><div class="scenario-actions"><button class="button outline" data-action="load-scenario" data-id="${row.id}">Buka</button><button class="link-button danger" data-action="delete-scenario" data-id="${row.id}">Hapus</button></div></article>`; }).join('') : '<div class="panel empty"><span>◇</span><h2>Belum ada skenario</h2><p>Simpan perhitungan dari Kalkulator Target untuk membandingkannya nanti.</p></div>'}</section>`;
 }
 
 function shell() {
   const nav = [['overview', '▦', 'Ringkasan'], ['planner', '◎', 'Kalkulator Target'], ['reports', '▤', 'Laporan'], ['scenarios', '◇', 'Skenario']];
   const pages = { overview, planner, reports, scenarios };
-  return `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">A</span><div><strong>ALFACOM</strong><small>Target Marketing</small></div></div><div class="side-label">WORKSPACE</div><nav>${nav.map(([key, icon, title]) => `<button class="nav-item ${state.page === key ? 'active' : ''}" data-action="page" data-page="${key}"><span>${icon}</span>${title}</button>`).join('')}</nav><div class="side-bottom"><div class="side-caption">MODEL</div><p>Berdasarkan laba rugi<br>Januari–September 2026</p><button class="logout" data-action="logout">Keluar ↗</button></div></aside>
-  <div class="main-wrap"><header class="topbar"><div class="mobile-brand">ALFACOM <span>Target Marketing</span></div><div class="topbar-left"><span class="breadcrumb">Dashboard <b>/ ${nav.find(x => x[0] === state.page)[2]}</b></span></div><div class="topbar-right">${demo ? '<span class="demo-chip">PRATINJAU LOKAL</span>' : ''}<label class="store-select"><span>TOKO</span><select id="store-select">${state.member.allowed_stores.map(code => `<option value="${code}" ${state.store === code ? 'selected' : ''}>${code === 'kendari' ? 'Kendari' : 'Raha'}</option>`).join('')}</select></label><div class="avatar" title="${esc(state.user?.email || 'Pratinjau')}">${esc((state.user?.email || 'A')[0].toUpperCase())}</div></div></header><div class="mobile-nav">${nav.map(([key, icon, title]) => `<button class="${state.page === key ? 'active' : ''}" data-action="page" data-page="${key}"><span>${icon}</span><small>${title.replace('Kalkulator Target', 'Target')}</small></button>`).join('')}</div><main>${pages[state.page]()}</main><footer>Alfacom Multi Solution · Estimasi untuk perencanaan, diperbarui saat laporan baru dimasukkan.</footer></div></div>`;
-}
-
-function authScreen() {
-  if (!client && !demo) return `<div class="auth-wrap"><div class="auth-card"><span class="brand-mark">A</span><h1>Konfigurasi belum selesai</h1><p>Atur URL dan publishable/anon key Supabase pada build frontend agar aplikasi dapat terhubung ke proyek baru.</p><code>VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY</code></div></div>`;
-  return `<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><span class="brand-mark">A</span><div><strong>ALFACOM</strong><small>Target Marketing</small></div></div><span class="eyebrow">Akses privat</span><h1>Rencanakan laba<br>dengan dasar yang jelas.</h1><p>Masuk untuk melihat laporan Kendari dan Raha serta menyusun target omzet.</p><form id="login-form"><label class="field"><span>Email</span><input type="email" name="email" required autocomplete="username" placeholder="email@perusahaan.com"></label><label class="field"><span>Kata sandi</span><input type="password" name="password" autocomplete="current-password" placeholder="••••••••"></label><button class="button primary full" type="submit">Masuk dengan kata sandi →</button></form><button class="link-button magic-link" data-action="magic-link">Kirim tautan masuk ke email</button><small class="fine">Akun dibuat oleh admin proyek Supabase. Data laporan tidak dibuka untuk pengunjung umum.</small></div><div class="auth-side"><span>ALFACOM / 2026</span><div><p>“Target yang baik dapat ditelusuri kembali ke angka laporan.”</p><small>Perencanaan dua toko · Kendari & Raha</small></div></div></div>`;
+  return `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-mark">A</span><div><strong>ALFACOM</strong><small>Target Marketing</small></div></div><div class="side-label">WORKSPACE</div><nav>${nav.map(([key, icon, title]) => `<button class="nav-item ${state.page === key ? 'active' : ''}" data-action="page" data-page="${key}"><span>${icon}</span>${title}</button>`).join('')}</nav><div class="side-bottom"><div class="side-caption">MODEL</div><p>Berdasarkan laba rugi<br>Januari–September 2026</p><small>Akses langsung · Pilih toko di bagian atas</small></div></aside>
+  <div class="main-wrap"><header class="topbar"><div class="mobile-brand">ALFACOM <span>Target Marketing</span></div><div class="topbar-left"><span class="breadcrumb">Dashboard <b>/ ${nav.find(x => x[0] === state.page)[2]}</b></span></div><div class="topbar-right">${demo ? '<span class="demo-chip">PRATINJAU LOKAL</span>' : ''}<label class="store-select"><span>TOKO</span><select id="store-select"><option value="kendari" ${state.store === 'kendari' ? 'selected' : ''}>Kendari</option><option value="raha" ${state.store === 'raha' ? 'selected' : ''}>Raha</option></select></label></div></header><div class="mobile-nav">${nav.map(([key, icon, title]) => `<button class="${state.page === key ? 'active' : ''}" data-action="page" data-page="${key}"><span>${icon}</span><small>${title.replace('Kalkulator Target', 'Target')}</small></button>`).join('')}</div><main>${pages[state.page]()}</main><footer>Alfacom Multi Solution · Estimasi untuk perencanaan, diperbarui saat laporan baru dimasukkan.</footer></div></div>`;
 }
 
 function emptyDataScreen() {
-  return `<div class="auth-wrap"><div class="auth-card"><span class="brand-mark">A</span><h1>Belum ada laporan</h1><p>Akun sudah aktif, tetapi 18 laporan awal belum diimpor ke proyek Supabase. Jalankan alat impor sesuai README, lalu muat ulang halaman.</p><button class="button outline" data-action="logout">Keluar</button></div></div>`;
+  return `<div class="auth-wrap"><div class="auth-card"><span class="brand-mark">A</span><h1>Belum ada laporan</h1><p>Laporan belum tersedia dari Supabase. Muat ulang halaman setelah data diimpor.</p><button class="button outline" data-action="retry">Coba lagi</button></div></div>`;
 }
 
 function render() {
-  app.innerHTML = `${state.busy ? '<div class="loading">Memuat laporan…</div>' : state.member ? (state.reports.length ? shell() : emptyDataScreen()) : authScreen()}${state.alert ? `<div class="toast">${esc(state.alert)}</div>` : ''}`;
+  const configMissing = !demo && (!supabaseUrl || !publicKey);
+  const errorScreen = `<div class="auth-wrap"><div class="auth-card"><span class="brand-mark">A</span><h1>Data belum dapat dimuat</h1><p>${esc(state.alert || 'Periksa koneksi internet, lalu coba lagi.')}</p><button class="button outline" data-action="retry">Coba lagi</button></div></div>`;
+  app.innerHTML = `${state.busy || !state.ready ? '<div class="loading">Memuat laporan…</div>' : configMissing ? '<div class="loading">Konfigurasi Supabase belum tersedia.</div>' : state.reports.length ? shell() : state.alert ? errorScreen : emptyDataScreen()}${state.alert && state.reports.length ? `<div class="toast">${esc(state.alert)}</div>` : ''}`;
 }
 
 function readPlannerField(element) {
@@ -145,39 +147,27 @@ function readPlannerField(element) {
   else x[key] = Number(element.value);
 }
 
-function reportForm() {
-  const now = new Date();
-  return `<form id="report-form" class="panel report-form"><div class="panel-head"><div><span class="eyebrow">Input admin</span><h2>Tambah atau perbarui laporan bulanan</h2></div><button type="button" class="link-button" data-action="toggle-report-form">Tutup</button></div><p class="fine">Isikan angka total persis seperti laporan. Menyimpan periode yang sudah ada akan menggantinya.</p><div class="fields"><label class="field"><span>Periode bulan</span><input name="period" type="month" value="${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}" required></label>${numberInput('Total pendapatan (Rp)', 'revenue', 0)}${numberInput('Total HPP akhir (Rp)', 'hpp', 0)}${numberInput('Total biaya laporan (Rp)', 'operating_expenses_reported', 0)}${numberInput('Komisi (Rp)', 'commission', 0)}${numberInput('Pengiriman (Rp)', 'delivery', 0)}<label class="field"><span>Bagi hasil investor dalam laporan?</span><select name="investorStatus"><option value="unpaid">Tidak ada akun / belum dibayar</option><option value="paid">Ada akun / sudah dibayar</option></select></label>${numberInput('Bagi hasil investor dibayar (Rp)', 'investor_paid', 0)}${numberInput('Pendapatan lain (Rp)', 'other_income', 0)}${numberInput('Biaya lain (Rp)', 'other_expense', 0)}</div><button class="button primary" type="submit">Simpan laporan</button></form>`;
-}
-
 document.addEventListener('click', async event => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
   try {
     if (action === 'page') { state.page = button.dataset.page; render(); window.scrollTo(0, 0); }
-    if (action === 'logout') { if (!demo) await client.auth.signOut(); state.member = null; state.reports = []; render(); }
-    if (action === 'magic-link') {
-      if (!client) throw new Error('Supabase belum terhubung');
-      const email = document.querySelector('#login-form [name="email"]')?.value.trim();
-      if (!email || !document.querySelector('#login-form [name="email"]').checkValidity()) throw new Error('Isi alamat email yang valid');
-      const redirectTo = `${location.origin}${import.meta.env.BASE_URL}`;
-      const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo, shouldCreateUser: false } });
-      if (error) throw error;
-      notify('Tautan masuk dikirim. Periksa email Anda.');
-    }
+    if (action === 'retry') await bootstrap();
     if (action === 'reset') { state.drafts[state.store] = defaultDraft(); render(); }
     if (action === 'report-detail') { state.selectedReport = button.dataset.period; render(); }
-    if (action === 'toggle-report-form') { const slot = document.getElementById('report-form-slot'); if (slot) slot.innerHTML = slot.innerHTML ? '' : reportForm(); }
     if (action === 'save-scenario') {
-      if (demo) throw new Error('Penyimpanan tersedia setelah Supabase terhubung');
       const name = prompt('Nama skenario target:');
       if (!name?.trim()) return;
-      const result = await api('scenario', { method: 'POST', body: { store_code: state.store, name: name.trim(), inputs: draft() } });
-      state.scenarios.unshift(result.scenario); notify('Skenario tersimpan.');
+      if (name.trim().length > 120) throw new Error('Nama skenario maksimal 120 karakter');
+      requiredRevenue(draft());
+      const scenario = { id: crypto.randomUUID(), store_code: state.store, name: name.trim(), inputs: { ...draft() }, created_at: new Date().toISOString() };
+      state.scenarios.unshift(scenario);
+      saveScenarios();
+      notify('Skenario tersimpan pada browser ini.');
     }
     if (action === 'load-scenario') { const item = state.scenarios.find(x => x.id === button.dataset.id); if (item) { state.drafts[state.store] = { ...item.inputs }; state.page = 'planner'; render(); } }
-    if (action === 'delete-scenario') { if (!confirm('Hapus skenario ini?')) return; if (demo) throw new Error('Penyimpanan tersedia setelah Supabase terhubung'); await api('scenario', { method: 'DELETE', id: button.dataset.id }); state.scenarios = state.scenarios.filter(x => x.id !== button.dataset.id); notify('Skenario dihapus.'); }
+    if (action === 'delete-scenario') { if (!confirm('Hapus skenario ini?')) return; state.scenarios = state.scenarios.filter(x => x.id !== button.dataset.id); saveScenarios(); notify('Skenario dihapus.'); }
   } catch (error) { notify(error.message); }
 });
 
@@ -188,36 +178,8 @@ document.addEventListener('change', event => {
 document.addEventListener('input', event => {
   if (event.target.closest('.planner-form') && event.target.name && event.target.type === 'number') { readPlannerField(event.target); document.getElementById('planner-results').innerHTML = plannerResults(); }
 });
-document.addEventListener('submit', async event => {
-  if (!['login-form', 'report-form'].includes(event.target.id)) return;
-  event.preventDefault();
-  const form = event.target, values = Object.fromEntries(new FormData(form));
-  try {
-    if (form.id === 'login-form') {
-      if (!client) throw new Error('Supabase belum terhubung');
-      const { data, error } = await client.auth.signInWithPassword({ email: values.email, password: values.password });
-      if (error) throw error;
-      state.user = data.user;
-      await bootstrap();
-    } else {
-      if (demo) throw new Error('Input laporan tersedia setelah Supabase terhubung');
-      const revenue = round(values.revenue), hpp = round(values.hpp), expenses = round(values.operating_expenses_reported);
-      const investor = values.investorStatus === 'paid' ? round(values.investor_paid) : null;
-      const commission = round(values.commission), delivery = round(values.delivery);
-      const report = { store_code: state.store, period: `${values.period}-01`, source_file: 'Input manual', source_period: values.period, revenue, hpp, gross_profit: revenue - hpp, operating_expenses_reported: expenses, investor_paid: investor, other_income: round(values.other_income), other_expense: round(values.other_expense), commission, delivery, other_operating_cost: expenses - (investor ?? 0) - commission - delivery, net_reported: null, lines: [] };
-      validateReport(report);
-      const result = await api('report', { method: 'POST', body: report });
-      state.reports = state.reports.filter(x => !(x.store_code === state.store && x.period === report.period)).concat(result.report);
-      state.drafts = {}; state.selectedReport = report.period; notify('Laporan tersimpan dan model diperbarui.');
-    }
-  } catch (error) { notify(error.message); }
-});
-
 async function start() {
-  if (demo) { state.user = { email: 'preview@local' }; await bootstrap(); return; }
-  if (!client) { render(); return; }
-  const { data: { session } } = await client.auth.getSession();
-  if (session) { state.user = session.user; await bootstrap(); } else render();
-  client.auth.onAuthStateChange((event, session) => { if (event === 'SIGNED_OUT') { state.member = null; state.reports = []; state.user = null; render(); } else if (session) state.user = session.user; });
+  if (!demo && (!supabaseUrl || !publicKey)) { state.ready = true; render(); return; }
+  await bootstrap();
 }
 start();

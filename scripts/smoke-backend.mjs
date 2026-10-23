@@ -26,6 +26,13 @@ async function call(action, token, method = 'GET', body, id) {
 }
 
 try {
+  const publicResponse = await fetch(`${url}/functions/v1/marketing-api?action=public`);
+  const publicData = await publicResponse.json();
+  assert.equal(publicResponse.status, 200);
+  assert.equal(publicData.reports.length, 18);
+  assert(publicData.reports.every(row => !('lines' in row) && !('source_file' in row) && !('source_period' in row)));
+  const blockedWrite = await fetch(`${url}/functions/v1/marketing-api?action=report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(blockedWrite.status, 401);
   const { data: created, error: createError } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
   if (createError) throw createError;
   userId = created.user.id;
@@ -66,7 +73,7 @@ try {
   });
   assert.equal(adminReport.status, 200);
   testReportId = adminReport.body.report.id;
-  console.log('Live smoke test passed: login, 18 private reports, scenario save/delete, role enforcement, admin report input.');
+  console.log('Live smoke test passed: public monthly summary, protected detail, scenario save/delete, role enforcement, admin report input.');
 } finally {
   if (testReportId) {
     const { error } = await admin.from('marketing_reports').delete().eq('id', testReportId);
