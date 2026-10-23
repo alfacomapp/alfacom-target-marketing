@@ -2,6 +2,12 @@
 
 Aplikasi target omzet dan laba untuk toko Kendari dan Raha. Frontend statis disajikan melalui GitHub Pages. Login memakai Supabase Auth; data laporan serta skenario berada di Supabase Postgres dan hanya dapat diakses melalui Edge Function `marketing-api`.
 
+- Aplikasi: https://alfacomapp.github.io/alfacom-target-marketing/
+- Repository: https://github.com/alfacomapp/alfacom-target-marketing
+- Proyek Supabase: https://supabase.com/dashboard/project/wevrtmqmgnfdwnmkgydg
+
+Proyek Supabase tersebut sudah berisi 18 laporan historis dan fungsi API yang terpasang. Pengguna pertama tetap perlu dibuat di Supabase Auth dan diberi peran pada `marketing_members` sebelum dapat masuk. Undangan pengguna harus dikirim ke alamat email yang dipilih pemilik aplikasi.
+
 ## Model perhitungan
 
 18 laporan sumber (Januari–September 2026 untuk masing-masing toko) direkonsiliasi per bulan:
@@ -56,6 +62,8 @@ Pratinjau lokal memakai 18 file `.xls` di folder proyek. Data pratinjau dilayani
 5. Buat repository variables `SUPABASE_URL` dan `SUPABASE_ANON_KEY` di GitHub. Nilai kedua adalah publishable/anon key, bukan service role key. Pilih **GitHub Actions** sebagai sumber GitHub Pages. Workflow akan menguji, membangun, dan menerbitkan frontend.
 
 File `.env.example` dapat disalin ke `.env.local` untuk menguji frontend terhadap Supabase secara lokal. Akun yang bisa login tetap harus ada dalam `marketing_members`.
+
+Untuk memeriksa layanan yang sudah terpasang, set tiga variabel `SUPABASE_URL`, `SUPABASE_ANON_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY` pada shell lokal, lalu jalankan `node scripts/smoke-backend.mjs`. Pemeriksaan ini membuat pengguna dan laporan sementara, menguji alur akses, lalu menghapus keduanya. Jangan menyimpan service role key di file proyek.
 
 ## Audit sumber
 
