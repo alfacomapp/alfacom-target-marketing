@@ -1,0 +1,2 @@
+[functions.marketing-api]
+verify_jwt = false

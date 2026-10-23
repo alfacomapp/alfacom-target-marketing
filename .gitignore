@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.xls
+indexhtml.txt
+kodegs.txt
+analysis_raw_rows.json
+normalized_reports.private.json
+demo-data.private.json
+public/demo-data.json
+*.private.sql
+.supabase/
+.temp/
