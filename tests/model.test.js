@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { allocateMarketing, backtest, calibrate, forecast, requiredRevenue, validateReport } from '../shared/model.js';
+import { allocateMarketing, backtest, calibrate, forecast, requiredRevenue, validateReport } from '../supabase/functions/_shared/model.js';
 
 const report = (period, revenue, hpp, operating, investor = null) => ({
   period, revenue, hpp, gross_profit: revenue - hpp,

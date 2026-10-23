@@ -11,7 +11,7 @@
     "prepare:demo": "node scripts/make-demo.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.76.0"
+    "@supabase/supabase-js": "2.118.0"
   },
   "devDependencies": {
     "vite": "^7.1.0"

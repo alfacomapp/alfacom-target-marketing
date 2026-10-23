@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { allocateMarketing, backtest, calibrate, forecast, requiredRevenue, validateReport } from '../shared/model.js';
+import { allocateMarketing, backtest, calibrate, forecast, requiredRevenue, validateReport } from '../supabase/functions/_shared/model.js';
 import './style.css';
 
 const app = document.getElementById('app');
@@ -130,8 +130,12 @@ function authScreen() {
   return `<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><span class="brand-mark">A</span><div><strong>ALFACOM</strong><small>Target Marketing</small></div></div><span class="eyebrow">Akses privat</span><h1>Rencanakan laba<br>dengan dasar yang jelas.</h1><p>Masuk untuk melihat laporan 9 bulan Kendari dan Raha serta menyusun target omzet.</p><form id="login-form"><label class="field"><span>Email</span><input type="email" name="email" required autocomplete="username" placeholder="email@perusahaan.com"></label><label class="field"><span>Kata sandi</span><input type="password" name="password" required autocomplete="current-password" placeholder="••••••••"></label><button class="button primary full" type="submit">Masuk ke dashboard →</button></form><small class="fine">Akun dibuat oleh admin proyek Supabase. Data laporan tidak dibuka untuk pengunjung umum.</small></div><div class="auth-side"><span>ALFACOM / 2026</span><div><p>“Target yang baik dapat ditelusuri kembali ke angka laporan.”</p><small>Perencanaan dua toko · Kendari & Raha</small></div></div></div>`;
 }
 
+function emptyDataScreen() {
+  return `<div class="auth-wrap"><div class="auth-card"><span class="brand-mark">A</span><h1>Belum ada laporan</h1><p>Akun sudah aktif, tetapi 18 laporan awal belum diimpor ke proyek Supabase. Jalankan alat impor sesuai README, lalu muat ulang halaman.</p><button class="button outline" data-action="logout">Keluar</button></div></div>`;
+}
+
 function render() {
-  app.innerHTML = `${state.member && state.reports.length ? shell() : state.busy ? '<div class="loading">Memuat laporan…</div>' : authScreen()}${state.alert ? `<div class="toast">${esc(state.alert)}</div>` : ''}`;
+  app.innerHTML = `${state.busy ? '<div class="loading">Memuat laporan…</div>' : state.member ? (state.reports.length ? shell() : emptyDataScreen()) : authScreen()}${state.alert ? `<div class="toast">${esc(state.alert)}</div>` : ''}`;
 }
 
 function readPlannerField(element) {

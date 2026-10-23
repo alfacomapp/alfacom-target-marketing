@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { validateReport } from '../shared/model.js';
+import { validateReport } from '../supabase/functions/_shared/model.js';
 
 const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -13,3 +13,4 @@ public/demo-data.json
 *.private.sql
 .supabase/
 .temp/
+deno.lock

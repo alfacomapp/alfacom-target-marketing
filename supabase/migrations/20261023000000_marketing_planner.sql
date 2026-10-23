@@ -16,14 +16,14 @@ create table if not exists public.marketing_reports (
   revenue numeric(16,0) not null check (revenue > 0),
   hpp numeric(16,0) not null,
   gross_profit numeric(16,0) not null,
-  operating_expenses_reported numeric(16,0) not null,
+  operating_expenses_reported numeric(16,0) not null check (operating_expenses_reported >= 0),
   investor_paid numeric(16,0) check (investor_paid >= 0),
   other_income numeric(16,0) not null default 0,
   other_expense numeric(16,0) not null default 0,
   net_reported numeric(16,0),
-  commission numeric(16,0) not null default 0,
-  delivery numeric(16,0) not null default 0,
-  other_operating_cost numeric(16,0) not null,
+  commission numeric(16,0) not null default 0 check (commission >= 0),
+  delivery numeric(16,0) not null default 0 check (delivery >= 0),
+  other_operating_cost numeric(16,0) not null check (other_operating_cost >= 0),
   lines jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -47,7 +47,7 @@ create index if not exists marketing_scenarios_user_created_idx on public.market
 alter table public.marketing_members enable row level security;
 alter table public.marketing_reports enable row level security;
 alter table public.marketing_scenarios enable row level security;
-revoke all on public.marketing_members, public.marketing_reports, public.marketing_scenarios from anon, authenticated;
+revoke all on public.marketing_members, public.marketing_reports, public.marketing_scenarios from public, anon, authenticated;
 grant all on public.marketing_members, public.marketing_reports, public.marketing_scenarios to service_role;
 grant usage, select on sequence public.marketing_reports_id_seq to service_role;
 

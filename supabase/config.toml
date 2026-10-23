@@ -1,2 +1,3 @@
 [functions.marketing-api]
+# JWT is verified explicitly with auth.getUser(token) so publishable keys work.
 verify_jwt = false

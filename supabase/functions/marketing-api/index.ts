@@ -1,5 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.76.0';
-import { requiredRevenue, validateReport } from '../../../shared/model.js';
+import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
+import { requiredRevenue, validateReport } from '../_shared/model.js';
 
 const url = Deno.env.get('SUPABASE_URL')!;
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -7,14 +7,15 @@ const db = createClient(url, serviceKey, { auth: { persistSession: false } });
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, apikey, content-type', 'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS' };
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const bad = (message: string, status = 400) => json({ error: message }, status);
+class InputError extends Error {}
 const readJson = async (request: Request) => {
   const size = Number(request.headers.get('content-length') || 0);
-  if (size > 100_000) throw new Error('Ukuran data terlalu besar');
-  return await request.json();
+  if (size > 100_000) throw new InputError('Ukuran data terlalu besar');
+  try { return await request.json(); } catch { throw new InputError('Format JSON tidak valid'); }
 };
 const money = (value: unknown, label: string) => {
   const n = Number(value);
-  if (!Number.isSafeInteger(n) || Math.abs(n) > 1_000_000_000_000) throw new Error(`${label} harus bilangan rupiah bulat`);
+  if (!Number.isSafeInteger(n) || Math.abs(n) > 1_000_000_000_000) throw new InputError(`${label} harus bilangan rupiah bulat`);
   return n;
 };
 
@@ -57,7 +58,7 @@ Deno.serve(async (request: Request) => {
           !Number.isFinite(inputs.marketingShare) || inputs.marketingShare < 0 || inputs.marketingShare > 100 ||
           !Number.isInteger(inputs.people) || inputs.people < 1 || inputs.people > 1000 || inputs.simulationRevenue < 0 ||
           !['operating', 'owner'].includes(inputs.targetKind)) return bad('Asumsi skenario tidak valid');
-      requiredRevenue(inputs);
+      try { requiredRevenue(inputs); } catch (error) { throw new InputError(error instanceof Error ? error.message : 'Asumsi tidak valid'); }
       const { data, error } = await db.from('marketing_scenarios').insert({ user_id: auth.user.id, store_code: store, name, inputs }).select('*').single();
       if (error) throw error;
       return json({ scenario: data }, 201);
@@ -93,7 +94,7 @@ Deno.serve(async (request: Request) => {
         lines: Array.isArray(body.lines) ? body.lines.slice(0, 120) : [],
         updated_at: new Date().toISOString(),
       };
-      validateReport(report);
+      try { validateReport(report); } catch (error) { throw new InputError(error instanceof Error ? error.message : 'Laporan tidak valid'); }
       const { data, error } = await db.from('marketing_reports').upsert(report, { onConflict: 'store_code,period' }).select('*').single();
       if (error) throw error;
       return json({ report: data });
@@ -101,7 +102,7 @@ Deno.serve(async (request: Request) => {
     return bad('Endpoint tidak ditemukan', 404);
   } catch (error) {
     console.error(error);
-    const message = error instanceof Error ? error.message : 'Terjadi kesalahan';
-    return bad(message, 400);
+    if (error instanceof InputError) return bad(error.message, 400);
+    return bad('Gagal memproses permintaan', 500);
   }
 });

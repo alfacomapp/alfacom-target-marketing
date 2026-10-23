@@ -13,6 +13,7 @@ export function validateReport(row) {
   const keys = ['revenue', 'hpp', 'gross_profit', 'operating_expenses_reported', 'other_income', 'other_expense', 'commission', 'delivery', 'other_operating_cost'];
   for (const key of keys) if (!Number.isFinite(num(row[key]))) throw new Error(`Data ${key} tidak valid`);
   if (num(row.revenue) <= 0) throw new Error('Pendapatan harus lebih dari nol');
+  if (num(row.operating_expenses_reported) < 0 || num(row.commission) < 0 || num(row.delivery) < 0 || num(row.other_operating_cost) < 0) throw new Error('Biaya operasional harus tidak negatif');
   if (Math.abs(num(row.revenue) - num(row.hpp) - num(row.gross_profit)) > 2) throw new Error('Pendapatan − HPP tidak sama dengan laba kotor');
   const investor = row.investor_paid == null ? 0 : num(row.investor_paid);
   if (!Number.isFinite(investor) || investor < 0) throw new Error('Bagi hasil investor tidak valid');
